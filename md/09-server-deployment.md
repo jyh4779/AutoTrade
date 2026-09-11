@@ -23,13 +23,13 @@ SSH 호스트 키는 서버 관리 경로에서 확인한 지문과 대조한다
 서버에서 다음 순서로 코드 패키지를 준비하고 [설치·데이터 이전 절차](../deploy/crypto/README.md)를 따른다.
 
 ```bash
-git clone --branch main https://github.com/jyh4779/AutoTrade.git ~/AutoTrade
-cd ~/AutoTrade
+git clone --branch main https://github.com/jyh4779/AutoTrade.git /app/autotrade
+cd /app/autotrade
 git rev-parse HEAD
 python3 deploy/crypto/build.py
-mkdir -p ~/crypto-package
-unzip dist/crypto-ubuntu.zip -d ~/crypto-package
-cd ~/crypto-package
+mkdir -p /app/autotrade/dist/package
+unzip dist/crypto-ubuntu.zip -d /app/autotrade/dist/package
+cd /app/autotrade/dist/package
 sudo bash deploy/crypto/install.sh
 PYTHONPATH=. /opt/ml-crypto/venv/bin/python deploy/crypto/smoke.py
 ```
