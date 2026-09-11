@@ -1,0 +1,33 @@
+[Unit]
+Description=Upbit KRW paper trading (public API only)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ml-crypto
+Group=ml-crypto
+WorkingDirectory=/opt/ml-crypto
+Environment=PYTHONUNBUFFERED=1
+Environment=ML_CRYPTO_DATA=/var/lib/ml-crypto
+Environment=TZ=Asia/Seoul
+EnvironmentFile=-/etc/ml-crypto/environment
+ExecStart=/opt/ml-crypto/venv/bin/python -m src.runners.crypto_daemon
+Restart=on-failure
+RestartPreventExitStatus=75
+RestartSec=15
+TimeoutStopSec=180
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ml-crypto
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
