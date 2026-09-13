@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 from src.core.observability.events import ROOT
 from src.core.observability.processes import Singleton
-from src.adapters.upbit.public import PublicAPI
+from src.adapters.upbit.public import PublicAPI,error_details
 from src.markets.crypto.research import Research
 from src.markets.crypto.strategy import POLICY,closed_bars,number
 from src.runners.crypto import run
@@ -43,7 +43,7 @@ def monitor(root,api=None,aggregate=True):
         bars=closed_bars(api.candles('KRW-BTC',now),now)
         allowed=number(bars[-1]['trade_price'])/number(bars[-5]['trade_price'])-1>=POLICY['btc_hour_loss_limit']
     except Exception as exc:
-        errors.append(dict(stage='entry_gate',error=type(exc).__name__))
+        errors.append(dict(stage='entry_gate',error=type(exc).__name__,details=error_details(exc)))
     for symbol in sorted(symbols):
         try:
             books=api.orderbook(symbol)
@@ -51,7 +51,7 @@ def monitor(root,api=None,aggregate=True):
             observed=datetime.now(timezone.utc).timestamp()
             actions.extend(ledger.advance(symbol,books[0],observed,allowed and symbol in eligible))
         except Exception as exc:
-            errors.append(dict(symbol=symbol,error=type(exc).__name__))
+            errors.append(dict(symbol=symbol,error=type(exc).__name__,details=error_details(exc)))
     result=dict(at=datetime.now(timezone.utc).isoformat(),pid=os.getpid(),mode='shadow',
         watched=len(symbols),actions=actions,errors=errors,status='WARN' if errors else 'PASS',
         orders_submitted=0,observation_interval_target_seconds=15,
@@ -85,7 +85,7 @@ def main():
                     out,result=future.result()
                     save(status.with_name('evaluation_latest.json'),dict(path=str(out),status=result['status']))
                 except Exception as exc:
-                    save(status.with_name('evaluation_latest.json'),dict(status='FAIL',error=type(exc).__name__))
+                    save(status.with_name('evaluation_latest.json'),dict(status='FAIL',error=type(exc).__name__,details=error_details(exc)))
                 future=None
             if not args.once and bucket!=last_bucket and future is None:
                 future=pool.submit(run,args.root)
@@ -97,7 +97,7 @@ def main():
                 save(status,dict(pid=os.getpid(),state='RUNNING',at=result['at'],
                     monitoring_status=result['status'],evaluation_running=bool(future and not future.done()),mode='shadow'))
             except Exception as exc:
-                save(status,dict(pid=os.getpid(),state='DEGRADED',at=datetime.now(timezone.utc).isoformat(),error=type(exc).__name__))
+                save(status,dict(pid=os.getpid(),state='DEGRADED',at=datetime.now(timezone.utc).isoformat(),error=type(exc).__name__,details=error_details(exc)))
             if args.once:break
             stopping.wait(max(1,15-(time.monotonic()-start)))
     except KeyboardInterrupt:

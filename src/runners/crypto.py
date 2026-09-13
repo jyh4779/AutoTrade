@@ -4,7 +4,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from src.adapters.upbit.public import PublicAPI
+from src.adapters.upbit.public import PublicAPI,error_details
 from src.markets.crypto.strategy import POLICY,select_universe,evaluate,closed_bars,number
 from src.core.observability.events import EventStore,ROOT,digest
 from src.core.observability.processes import Singleton
@@ -43,7 +43,7 @@ def run(root=ROOT, api=None):
                  snapshot_id=store.snapshot(btc))
         except Exception as exc:
             allowed=False
-            emit('CRYPTO_MARKET_GATE',allowed=False,reason='DATA_UNAVAILABLE',error_type=type(exc).__name__)
+            emit('CRYPTO_MARKET_GATE',allowed=False,reason='DATA_UNAVAILABLE',**error_details(exc))
         selected_symbols={x['symbol'] for x in selected}
         monitoring=selected+[dict(symbol=s,name=s) for s in sorted(research.pending_symbols()-selected_symbols)]
         for item in monitoring:
@@ -81,6 +81,7 @@ def run(root=ROOT, api=None):
                 emit('CRYPTO_EVALUATED',snapshot_id=sid,**result)
             except Exception as exc:
                 result=dict(symbol=symbol,name=item['name'],status='UNKNOWN',reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
+                result['error_details']=error_details(exc)
                 emit('CRYPTO_EVALUATED',**result)
             results.append(result)
         candidates=[r for r in results if r.get('eligible')]
@@ -99,7 +100,7 @@ def run(root=ROOT, api=None):
         store.export(datetime.now().date().isoformat())
         return out,report
     except Exception as exc:
-        emit('CRYPTO_FAILED',error_type=type(exc).__name__)
+        emit('CRYPTO_FAILED',**error_details(exc))
         raise
 
 

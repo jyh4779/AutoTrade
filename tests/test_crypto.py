@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime,timezone,timedelta
 from unittest.mock import Mock
-from src.adapters.upbit.public import PublicAPI
+from src.adapters.upbit.public import PublicAPI,PublicAPIError,error_details
 from src.markets.crypto.strategy import POLICY,select_universe,evaluate,closed_bars
 
 
@@ -49,3 +49,22 @@ class Crypto(unittest.TestCase):
         self.assertFalse(hasattr(PublicAPI,'submit'))
         self.assertFalse(hasattr(PublicAPI,'cancel'))
         with self.assertRaises(ValueError):PublicAPI.validate_symbol('USDT-BTC')
+
+    def test_error_context_is_safe_and_preserves_rate_limit(self):
+        session=Mock(); response=session.get.return_value
+        response.status_code=429
+        response.headers={'Remaining-Req':'group=market; min=1800; sec=0',
+                          'Authorization':'sensitive-value'}
+        response.text='private-response'
+        with self.assertLogs('src.adapters.upbit.public',level='WARNING') as logs:
+            with self.assertRaises(PublicAPIError) as caught:
+                PublicAPI(session).orderbook('KRW-BTC')
+        details=error_details(caught.exception)
+        self.assertEqual(details['http_status'],429)
+        self.assertEqual(details['code'],'UPBIT_RATE_LIMITED')
+        self.assertEqual(details['symbol'],'KRW-BTC')
+        self.assertFalse(details['will_retry'])
+        self.assertIn('Remaining-Req',details)
+        self.assertNotIn('sensitive-value',str(logs.output)+str(details))
+        self.assertNotIn('private-response',str(logs.output)+str(details))
+        self.assertEqual(session.get.call_count,1)

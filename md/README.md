@@ -13,6 +13,7 @@
 7. 업비트 연결·평가: [업비트 원화 현물](08-upbit.md).
 8. Ubuntu 이전: [코인 서버 배포](../deploy/crypto/README.md).
 9. 서버 접속·GitHub 전달: [서버 및 저장소 운영](09-server-deployment.md).
+10. 코인 오류 로그·보관 기간: [오류 진단과 데이터 보관](10-crypto-data-retention.md).
 
 ## 문서 관리
 
