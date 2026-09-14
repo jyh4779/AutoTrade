@@ -14,6 +14,7 @@ from src.core.observability.events import ROOT
 from src.core.observability.processes import Singleton
 from src.adapters.upbit.public import PublicAPI,error_details
 from src.markets.crypto.research import Research
+from src.markets.crypto.comparison import Comparison
 from src.markets.crypto.strategy import POLICY,closed_bars,number
 from src.runners.crypto import run
 from src.reporting.crypto_feedback import report as feedback_report
@@ -30,8 +31,9 @@ def monitor(root,api=None,aggregate=True):
     api=api or PublicAPI()
     storage=storage_path(root)
     ledger=Research(storage/'data/research.db')
+    comparison=Comparison(storage/'data/comparison.db')
     now=datetime.now(timezone.utc)
-    symbols=ledger.watch_symbols(now.timestamp())
+    symbols=ledger.watch_symbols(now.timestamp()) | comparison.watch_symbols()
     errors=[];actions=[];allowed=False;eligible=set()
     try:
         markets=api.markets()
@@ -50,6 +52,7 @@ def monitor(root,api=None,aggregate=True):
             if len(books)!=1:raise ValueError('ORDERBOOK_UNAVAILABLE')
             observed=datetime.now(timezone.utc).timestamp()
             actions.extend(ledger.advance(symbol,books[0],observed,allowed and symbol in eligible))
+            comparison.observe(symbol,books[0],observed,allowed and symbol in eligible)
         except Exception as exc:
             errors.append(dict(symbol=symbol,error=type(exc).__name__,details=error_details(exc)))
     result=dict(at=datetime.now(timezone.utc).isoformat(),pid=os.getpid(),mode='shadow',
@@ -60,6 +63,7 @@ def monitor(root,api=None,aggregate=True):
         result['feedback']=ledger.feedback()
         save(storage/'reports/performance_latest.json',dict(at=result['at'],feedback=result['feedback']))
         save(storage/'reports/feedback.json',feedback_report(ledger.path))
+        save(storage/'reports/comparison_latest.json',dict(at=result['at'],**comparison.report()))
     save(storage/'reports/paper_latest.json',result)
     return result
 

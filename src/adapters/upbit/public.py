@@ -2,8 +2,26 @@ import time
 import json
 import logging
 import traceback
+import threading
 from datetime import datetime, timezone
 import requests
+
+
+class RequestGate:
+    """Process-wide conservative pacing shared by evaluation and monitoring."""
+    def __init__(self, interval=.22):
+        self.interval=interval
+        self.lock=threading.Lock()
+        self.next_at=0.
+
+    def wait(self):
+        with self.lock:
+            delay=self.next_at-time.monotonic()
+            if delay>0:time.sleep(delay)
+            self.next_at=time.monotonic()+self.interval
+
+
+PUBLIC_GATE=RequestGate()
 
 
 class PublicAPIError(RuntimeError):
@@ -35,6 +53,7 @@ class PublicAPI:
             if delay > 0:
                 time.sleep(delay)
             self.last_request = time.monotonic()
+            PUBLIC_GATE.wait()
             response = None
             started = time.monotonic()
             try:
