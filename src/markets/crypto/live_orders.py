@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from decimal import Decimal as D
 from .comparison import BASE
+from .execution_profile import score_profile
 
 class LiveOrders:
     def __init__(self,path,api,enabled=False,max_order_krw=None):
@@ -44,6 +45,18 @@ class LiveOrders:
             raise
         self._record(identifier,response)
         return identifier
+
+    def submit_scored_buy(self,signal_id,strategy,symbol,score,available_cash,committed_capital,buy_fee):
+        """Shared sizing; caller must supply reconciled account values, never estimates."""
+        profile=score_profile()
+        amount=profile.buy_amount(score)
+        cash,committed,fee=map(lambda x:D(str(x)),(available_cash,committed_capital,buy_fee))
+        if any(not x.is_finite() or x<0 for x in (cash,committed,fee)) or fee>=1:
+            raise ValueError('INVALID_ACCOUNT_VALUES')
+        if amount<D(profile.minimum_order):raise ValueError('BELOW_ENTRY_THRESHOLD')
+        required=amount*(1+fee)
+        if required>cash or committed+required>D(profile.initial_cash):raise ValueError('CAPITAL_LIMIT')
+        return self.submit(signal_id,strategy,symbol,'BUY',amount)
 
     def _record(self,identifier,response):
         # Preserve cumulative execution amounts for reconciliation; no fabricated fills.

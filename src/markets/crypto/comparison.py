@@ -7,7 +7,7 @@ from pathlib import Path
 from decimal import Decimal as D
 from dataclasses import asdict
 from contextlib import contextmanager
-from .execution_profile import ExecutionProfile
+from .execution_profile import ExecutionProfile,score_profile
 
 BASE='upbit_krw_momentum_v1'
 EXPERIMENT='relative_entry_v1'
@@ -21,6 +21,7 @@ class Comparison:
             c.executescript('''
             CREATE TABLE IF NOT EXISTS profile(id TEXT PRIMARY KEY,payload TEXT);
             CREATE TABLE IF NOT EXISTS signals(id TEXT PRIMARY KEY,strategy TEXT,symbol TEXT,at REAL,eligible INTEGER,reason TEXT);
+            CREATE TABLE IF NOT EXISTS signal_scores(id TEXT PRIMARY KEY,score TEXT);
             CREATE TABLE IF NOT EXISTS consumed(id TEXT PRIMARY KEY,reason TEXT);
             CREATE TABLE IF NOT EXISTS positions(id TEXT PRIMARY KEY,strategy TEXT,symbol TEXT,at REAL,qty TEXT,cost TEXT,fee TEXT);
             CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,signal_id TEXT,strategy TEXT,symbol TEXT,side TEXT,at REAL,amount TEXT,state TEXT,reason TEXT);
@@ -43,9 +44,11 @@ class Comparison:
             with c:yield c
         finally:c.close()
 
-    def signal(self,identity,strategy,symbol,at,eligible,reason):
+    def signal(self,identity,strategy,symbol,at,eligible,reason,score=None):
         if strategy not in (BASE,EXPERIMENT):raise ValueError('UNKNOWN_STRATEGY')
+        if self.profile.allocation=='score_tiers':self.profile.buy_amount(score)
         with self.connect() as c:
+            if score is not None:c.execute('insert or ignore into signal_scores values(?,?)',(identity,str(score)))
             c.execute('insert or ignore into signals values(?,?,?,?,?,?)',(identity,strategy,symbol,at,int(eligible),reason))
 
     def watch_symbols(self):
@@ -115,10 +118,13 @@ class Comparison:
                 realized=sum((D(r[0]) for r in c.execute('select profit from closed where strategy=?',(s['strategy'],))),D(0))
                 cash=D(cfg.initial_cash)+realized-sum((D(p['cost'])+D(p['fee']) for p in holdings),D(0))-sum((D(o['amount'])*(1+D(cfg.buy_fee)) for o in pending),D(0))
                 if len(holdings)+len(pending)>=cfg.max_positions or any(p['symbol']==symbol for p in holdings+pending):reason='POSITION_LIMIT'
-                if cash<D(cfg.order_krw)*(1+D(cfg.buy_fee)):reason='CASH_LIMIT'
+                saved=c.execute('select score from signal_scores where id=?',(s['id'],)).fetchone()
+                amount=cfg.buy_amount(saved[0] if saved else None)
+                if amount<D(cfg.minimum_order):reason='BELOW_ENTRY_THRESHOLD'
+                if cash<amount*(1+D(cfg.buy_fee)):reason='CASH_LIMIT'
                 c.execute('insert into consumed values(?,?)',(s['id'],reason))
                 if reason=='QUEUED':
-                    c.execute('insert into orders values(?,?,?,?,?,?,?,?,?)',(s['id'],s['id'],s['strategy'],symbol,'BUY',at,cfg.order_krw,'PENDING','ENTRY'))
+                    c.execute('insert into orders values(?,?,?,?,?,?,?,?,?)',(s['id'],s['id'],s['strategy'],symbol,'BUY',at,str(amount),'PENDING','ENTRY'))
         return events
 
     def report(self):
@@ -132,3 +138,7 @@ class Comparison:
             return dict(profile=asdict(self.profile),profile_id=self.profile.identity(),lanes=lanes,
                 live=dict(status='DISABLED',reason='ACCOUNT_AND_LIMITS_NOT_CONFIGURED'),
                 fill_model='later_sampled_orderbook_partial_IOC',queue_priority_verified=False)
+
+
+def active_comparison(storage):
+    return Comparison(Path(storage)/"data/comparison_v2.db",score_profile())

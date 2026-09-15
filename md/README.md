@@ -15,6 +15,7 @@
 9. 서버 접속·GitHub 전달: [서버 및 저장소 운영](09-server-deployment.md).
 10. 코인 오류 로그·보관 기간: [오류 진단과 데이터 보관](10-crypto-data-retention.md).
 11. 전략 비교와 실거래 준비: [실행 조건 비교](11-crypto-comparison.md).
+12. 현재 투자 배분·사용자 설정: [실거래 준비](12-live-setup.md).
 
 ## 문서 관리
 

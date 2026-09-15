@@ -72,3 +72,45 @@ class ComparisonTests(unittest.TestCase):
         import subprocess,sys
         code="import src.runners.crypto_daemon,sys; assert 'src.adapters.upbit.private' not in sys.modules; assert 'src.markets.crypto.live_orders' not in sys.modules"
         subprocess.run([sys.executable,'-c',code],check=True)
+
+    def test_score_tier_boundaries(self):
+        from src.markets.crypto.execution_profile import score_profile
+        p=score_profile()
+        for score,amount in [('.6499',0),('.65',100000),('.7499',100000),('.75',150000),('.8499',150000),('.85',200000),('1',200000)]:
+            self.assertEqual(p.buy_amount(score),amount)
+        for score in ('NaN','Infinity','-1','1.01'):
+            with self.assertRaises(ValueError):p.buy_amount(score)
+        self.assertIsNone(p.daily_loss_limit)
+
+    def test_score_amount_persisted_and_fee_reserved(self):
+        from src.markets.crypto.execution_profile import score_profile
+        with tempfile.TemporaryDirectory() as d:
+            r=Comparison(Path(d)/'v2.db',score_profile())
+            r.signal('a',BASE,'KRW-X',100,True,'ENTRY',score='.85')
+            r.signal('b',EXPERIMENT,'KRW-X',100,True,'ENTRY',score='.75')
+            r.observe('KRW-X',self.book(101),101,True)
+            r.observe('KRW-X',self.book(102),102,True)
+            with r.connect() as c:
+                amounts={row['strategy']:(float(row['cost']),float(row['fee'])) for row in c.execute('select * from positions')}
+            self.assertEqual(amounts[BASE],(200000,100))
+            self.assertEqual(amounts[EXPERIMENT],(150000,75))
+
+    def test_scored_live_buy_requires_fee_inclusive_capital(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=LiveOrders(Path(d)/'live.db',Mock(),True,'200000')
+            r.submit=Mock(return_value='intent')
+            self.assertEqual(r.submit_scored_buy('s',BASE,'KRW-X','.85','1000000','0','.0005'),'intent')
+            self.assertEqual(r.submit.call_args.args[-1],200000)
+            for cash,committed in [('200000','0'),('1000000','800000')]:
+                with self.assertRaisesRegex(ValueError,'CAPITAL_LIMIT'):
+                    r.submit_scored_buy('s',BASE,'KRW-X','.85',cash,committed,'.0005')
+
+    def test_retired_lane_cancels_pending_buy(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=Comparison(Path(d)/'old.db')
+            r.signal('s',BASE,'KRW-X',100,True,'ENTRY')
+            r.observe('KRW-X',self.book(101),101,True)
+            r.observe('KRW-X',self.book(102),102,False)
+            with r.connect() as c:
+                self.assertEqual(c.execute('select state from orders').fetchone()[0],'CANCELLED')
+                self.assertEqual(c.execute('select count(*) from positions').fetchone()[0],0)

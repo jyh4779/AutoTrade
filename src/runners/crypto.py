@@ -9,7 +9,7 @@ from src.markets.crypto.strategy import POLICY,select_universe,evaluate,closed_b
 from src.core.observability.events import EventStore,ROOT,digest
 from src.core.observability.processes import Singleton
 from src.markets.crypto.research import Research
-from src.markets.crypto.comparison import Comparison
+from src.markets.crypto.comparison import Comparison,active_comparison
 from src.markets.crypto.experiments import challenger,EXPERIMENT
 
 
@@ -24,7 +24,7 @@ def run(root=ROOT, api=None):
     emit('CRYPTO_STARTED',policy=policy,policy_hash=digest(policy))
     results=[]
     research=Research(storage/'data/research.db')
-    comparison=Comparison(storage/'data/comparison.db')
+    comparison=active_comparison(storage)
     change=None
     try:
         markets=api.markets();tickers=api.tickers()
@@ -78,7 +78,7 @@ def run(root=ROOT, api=None):
                 for strategy,score,threshold in variants:
                     identity=digest([strategy,symbol,bar])
                     comparison.signal(identity,strategy,symbol,at.timestamp(),
-                        allowed and liquid and symbol in selected_symbols and score>=threshold,result['reason'])
+                        allowed and liquid and symbol in selected_symbols and score>=threshold,result['reason'],score=score)
                     research.signal(identity,strategy,symbol,at.timestamp(),score,
                         allowed and liquid and symbol in selected_symbols and score>=threshold,
                         'MARKET_GATE' if not allowed else result['reason'],reference=book[0]['orderbook_units'][0]['ask_price'])
